@@ -11,9 +11,9 @@ from pathlib import Path
 class Settings(BaseSettings):
     """Application-wide configuration, loaded from .env or environment."""
 
-    # ── LLM Provider (Using GitHub Codespace Token) ──
-    openai_api_key: str = Field(default_factory=lambda: __import__("os").environ.get("GITHUB_TOKEN", ""))
-    openai_base_url: str = "https://models.github.ai/inference"
+    # ── LLM Provider ──
+    openai_api_key: str = ""
+    # openai_base_url: str = "https://models.github.ai/inference"  # Removed, using default OpenAI
     openai_model: str = "gpt-4o"
     embedding_model: str = "text-embedding-3-small"
 

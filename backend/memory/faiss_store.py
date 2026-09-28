@@ -30,10 +30,7 @@ class FAISSStore:
         self.index_path: Path = self.index_dir / "index.faiss"
         self.texts_path: Path = self.index_dir / "texts.json"
 
-        self._client = OpenAI(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
-        )
+        self._client = OpenAI(api_key=settings.openai_api_key)
         self._index: faiss.IndexFlatIP | None = None
         self._texts: list[str] | None = None
 

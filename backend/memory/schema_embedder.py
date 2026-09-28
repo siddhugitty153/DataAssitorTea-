@@ -20,10 +20,7 @@ class SchemaEmbedder:
     """Parse a CSV → extract per-column metadata → embed with OpenAI."""
 
     def __init__(self) -> None:
-        self.client = OpenAI(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
-        )
+        self.client = OpenAI(api_key=settings.openai_api_key)
 
     # ────────────────────────────────────────────────────────────
     # Step 1: Extract metadata
