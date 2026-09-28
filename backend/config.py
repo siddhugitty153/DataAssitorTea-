@@ -4,14 +4,16 @@ Loads settings from environment variables / .env file.
 """
 
 from pydantic_settings import BaseSettings
+from pydantic import Field
 from pathlib import Path
 
 
 class Settings(BaseSettings):
     """Application-wide configuration, loaded from .env or environment."""
 
-    # ── LLM Provider ──
-    openai_api_key: str = ""
+    # ── LLM Provider (Using GitHub Codespace Token) ──
+    openai_api_key: str = Field(default_factory=lambda: __import__("os").environ.get("GITHUB_TOKEN", ""))
+    openai_base_url: str = "https://models.inference.ai.azure.com"
     openai_model: str = "gpt-4o"
     embedding_model: str = "text-embedding-3-small"
 
