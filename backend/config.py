@@ -11,11 +11,11 @@ from pathlib import Path
 class Settings(BaseSettings):
     """Application-wide configuration, loaded from .env or environment."""
 
-    # ── LLM Provider ──
+    # ── LLM Provider (Using Gemini) ──
     openai_api_key: str = ""
-    # openai_base_url: str = "https://models.github.ai/inference"  # Removed, using default OpenAI
-    openai_model: str = "gpt-4o"
-    embedding_model: str = "text-embedding-3-small"
+    openai_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    openai_model: str = "gemini-1.5-flash"
+    embedding_model: str = "text-embedding-004"
 
     # ── Sandbox ──
     sandbox_image: str = "data-sandbox"
