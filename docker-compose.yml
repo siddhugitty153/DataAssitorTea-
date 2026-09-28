@@ -1,0 +1,41 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./backend:/app/backend
+      - /var/run/docker.sock:/var/run/docker.sock
+    env_file:
+      - .env
+    command: uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./frontend:/app/frontend
+    env_file:
+      - .env
+    command: streamlit run frontend/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  sandbox-init:
+    build:
+      context: ./sandbox
+      dockerfile: Dockerfile
+    image: data-sandbox
+    entrypoint: ["echo", "Sandbox image built successfully"]

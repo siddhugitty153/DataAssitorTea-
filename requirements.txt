@@ -1,0 +1,31 @@
+# ── Core Framework ──
+fastapi>=0.115,<1
+uvicorn[standard]>=0.34,<1
+pydantic>=2.10,<3
+pydantic-settings>=2.7,<3
+
+# ── Agent Orchestration ──
+langgraph>=0.4,<1
+langchain-openai>=0.3,<1
+langchain-core>=0.3,<1
+
+# ── LLM & Embeddings ──
+openai>=1.82,<2
+
+# ── Vector Memory ──
+faiss-cpu>=1.9,<2
+
+# ── Sandbox Execution ──
+docker>=7,<8
+
+# ── Frontend ──
+streamlit>=1.45,<2
+
+# ── Data (host-side, for schema extraction) ──
+pandas>=2.2,<3
+numpy>=1.26,<3
+
+# ── Utilities ──
+python-multipart>=0.0.18
+python-dotenv>=1.1,<2
+httpx>=0.28,<1
