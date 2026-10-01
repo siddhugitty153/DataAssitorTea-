@@ -56,6 +56,18 @@ The backend logic is scaffolded but **not yet tested end-to-end**. The project h
   - *Cons:* Costs more tokens per iteration and slows down the total response time.
 **Decision:** We chose **Option B (QA Reviewer)**. Combined with the Memory Palace (which isolates context and prevents token explosion), the QA loop is highly efficient and guarantees a production-grade, statistically sound output.
 
+### Decision 4: Frontend Framework and UI Aesthetic
+**Context:** Choosing the stack and design for the premium dashboard MVP.
+**Options Considered (Framework):**
+- **Option A: Next.js** (Industry standard, robust API integration, heavier setup)
+- **Option B: Vite SPA** (Fast, lightweight, client-side only)
+**Decision:** We chose **Option A (Next.js)** for its robust API routing and standard architecture.
+**Options Considered (Aesthetic):**
+- **Option A: Dark Mode Glassmorphism**
+- **Option B: Clean Minimalist Light**
+- **Option C: Cyberpunk Terminal**
+**Decision:** We chose **Option B (Clean Minimalist Light)** for a crisp, high-contrast, professional data workspace.
+
 ---
 
 ## 🏗️ Architecture (Current — Single Agent)
@@ -264,10 +276,12 @@ e:\Data Assister\
 - [x] Visualizer agent (chart generation)
 - [x] LangGraph multi-agent workflow
 
-### Phase 4: API + UI (NEXT)
-- [ ] Clean REST API + WebSocket streaming
-- [ ] Premium frontend (Next.js or standalone)
-- [ ] Dashboard layout, data preview, charts
+### Phase 4: API + UI (IN PROGRESS)
+- [x] Premium frontend scaffold (Next.js)
+- [x] Dashboard layout (Clean Minimalist Light), data preview, chat feed
+- [x] WebSockets integration in `page.js` to hit `/api/upload` and `/api/analyze`
+- [ ] Render dynamic charts in UI
+- [ ] End-to-end testing in Codespace
 
 ### Phase 5: Production
 - [ ] Authentication
