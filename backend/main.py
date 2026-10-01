@@ -13,6 +13,7 @@ from backend.config import settings
 # ── Ensure data directories exist ──
 settings.data_dir.mkdir(parents=True, exist_ok=True)
 settings.faiss_dir.mkdir(parents=True, exist_ok=True)
+settings.uploads_dir.mkdir(parents=True, exist_ok=True)
 
 
 # ── Application ──

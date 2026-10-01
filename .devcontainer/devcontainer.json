@@ -7,8 +7,9 @@
       "version": "lts"
     }
   },
-  "postCreateCommand": "pip install -r requirements.txt && docker build -t data-sandbox ./sandbox",
-  "forwardPorts": [8000, 8501],
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "postStartCommand": "ollama serve > /tmp/ollama.log 2>&1 &",
+  "forwardPorts": [8000, 8501, 11434],
   "portsAttributes": {
     "8000": { "label": "FastAPI Backend", "onAutoForward": "notify" },
     "8501": { "label": "Streamlit Frontend", "onAutoForward": "openBrowser" }

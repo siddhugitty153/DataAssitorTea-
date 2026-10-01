@@ -10,12 +10,8 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from langchain_openai import ChatOpenAI
-
-from backend.config import settings
+from backend.core import create_llm, create_sandbox
 from backend.memory.faiss_store import FAISSStore
-from backend.sandbox.executor import SandboxExecutor
 from backend.agent.prompts import (
     ERROR_CORRECTION_PROMPT,
     REASON_PROMPT,
@@ -24,14 +20,9 @@ from backend.agent.prompts import (
 )
 from backend.agent.state import AgentState
 
-# ── Shared singletons (created once, reused across invocations) ──
-_llm = ChatOpenAI(
-    model=settings.openai_model,
-    api_key=settings.openai_api_key,
-    base_url=settings.openai_base_url,
-    temperature=0,
-)
-_executor = SandboxExecutor()
+# ── Shared singletons (created once via the provider-agnostic factories) ──
+_llm = create_llm()           # reads LLM_PROVIDER from .env
+_sandbox = create_sandbox()   # reads SANDBOX_PROVIDER from .env
 
 
 # ────────────────────────────────────────────────────────────────
@@ -110,8 +101,8 @@ async def reason(state: AgentState) -> dict:
         "status": "reasoning",
         "thought_log": log,
         "messages": [
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=prompt_text),
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt_text},
         ],
     }
 
@@ -122,8 +113,8 @@ async def reason(state: AgentState) -> dict:
 
 async def act(state: AgentState) -> dict:
     """Invoke the LLM to produce Python / Pandas code."""
-    response: AIMessage = await _llm.ainvoke(state["messages"])
-    code = _extract_code(response.content)
+    llm_response = await _llm.generate(state["messages"])
+    code = _extract_code(llm_response.content)
 
     n_lines = len(code.splitlines())
     thought = f"💻 Generated **{n_lines}-line** Python script."
@@ -133,7 +124,7 @@ async def act(state: AgentState) -> dict:
         "generated_code": code,
         "status": "acting",
         "thought_log": log,
-        "messages": [response],
+        "messages": [{"role": "assistant", "content": llm_response.content}],
     }
 
 
@@ -142,22 +133,22 @@ async def act(state: AgentState) -> dict:
 # ────────────────────────────────────────────────────────────────
 
 async def observe(state: AgentState) -> dict:
-    """Run the generated code inside an ephemeral Docker container."""
+    """Run the generated code in the configured sandbox."""
     code = state["generated_code"]
     dataset_path = state["dataset_path"]
     iteration = state.get("iteration", 0) + 1
 
-    stdout, stderr = await _executor.execute(code, dataset_path)
+    result = await _sandbox.execute(code, dataset_path=dataset_path)
 
-    if stderr:
+    if not result.success:
         thought = (
             f"❌ Execution **failed** (attempt {iteration}/{state['max_iterations']})\n"
-            f"```\n{stderr[:400]}\n```"
+            f"```\n{result.stderr[:400]}\n```"
         )
         log = _log(state, "observe", thought)
         return {
             "execution_result": "",
-            "execution_error": stderr,
+            "execution_error": result.stderr,
             "iteration": iteration,
             "status": "error",
             "thought_log": log,
@@ -165,11 +156,11 @@ async def observe(state: AgentState) -> dict:
 
     thought = (
         f"✅ Execution **succeeded** (attempt {iteration})\n"
-        f"Output preview:\n```\n{stdout[:400]}\n```"
+        f"Output preview:\n```\n{result.stdout[:400]}\n```"
     )
     log = _log(state, "observe", thought)
     return {
-        "execution_result": stdout,
+        "execution_result": result.stdout,
         "execution_error": "",
         "iteration": iteration,
         "status": "completed",
@@ -188,13 +179,13 @@ async def respond(state: AgentState) -> dict:
             query=state["query"],
             result=state["execution_result"],
         )
-        response: AIMessage = await _llm.ainvoke(
-            [HumanMessage(content=summary_prompt)]
-        )
+        llm_response = await _llm.generate([
+            {"role": "user", "content": summary_prompt},
+        ])
         thought = "📊 Analysis complete — formatting results for the user."
         log = _log(state, "respond", thought)
         return {
-            "execution_result": response.content,
+            "execution_result": llm_response.content,
             "status": "completed",
             "thought_log": log,
         }
