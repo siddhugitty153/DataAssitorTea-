@@ -11,19 +11,16 @@ retrieve *only* the columns relevant to the current query.
 from __future__ import annotations
 
 import pandas as pd
-from openai import OpenAI
 
 from backend.config import settings
+from backend.core import create_embedder
 
 
 class SchemaEmbedder:
     """Parse a CSV → extract per-column metadata → embed with OpenAI."""
 
     def __init__(self) -> None:
-        self.client = OpenAI(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
-        )
+        self.embedder = create_embedder()
 
     # ────────────────────────────────────────────────────────────
     # Step 1: Extract metadata
@@ -89,12 +86,12 @@ class SchemaEmbedder:
     # Step 2: Create embeddings
     # ────────────────────────────────────────────────────────────
 
-    def create_embeddings(
+    async def create_embeddings(
         self, metadata: list[dict]
     ) -> tuple[list[str], list[list[float]]]:
         """
         Turn each metadata dict into a human-readable text chunk,
-        then embed them via OpenAI in batches.
+        then embed them via the configured provider in batches.
         """
         texts = [
             self._format_dataset_summary(m)
@@ -103,15 +100,9 @@ class SchemaEmbedder:
             for m in metadata
         ]
 
-        embeddings: list[list[float]] = []
-        batch_size = 100
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i : i + batch_size]
-            resp = self.client.embeddings.create(
-                model=settings.embedding_model,
-                input=batch,
-            )
-            embeddings.extend([item.embedding for item in resp.data])
+        # The embedder abstraction handles its own batching (e.g. 100 for Ollama),
+        # so we can just pass the whole list of texts directly to it.
+        embeddings = await self.embedder.embed(texts)
 
         return texts, embeddings
 

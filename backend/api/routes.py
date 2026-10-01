@@ -58,7 +58,7 @@ async def upload_dataset(file: UploadFile = File(...)):
     # Build FAISS index
     embedder = SchemaEmbedder()
     metadata = embedder.extract_metadata(str(save_path))
-    texts, embeddings = embedder.create_embeddings(metadata)
+    texts, embeddings = await embedder.create_embeddings(metadata)
 
     store = FAISSStore(dataset_id)
     store.build_index(texts, embeddings)
@@ -106,6 +106,11 @@ async def analyze_dataset(
         "generated_code": None,
         "error": None,
     }
+
+    # Add query to Working Memory
+    from backend.memory.manager import MemoryManager
+    manager = MemoryManager(thread_id, request.dataset_id)
+    manager.add_message("user", request.query)
 
     background_tasks.add_task(
         _run_agent,
@@ -195,6 +200,7 @@ async def _run_agent(
             "messages": [],
             "dataset_id": dataset_id,
             "dataset_path": dataset_path,
+            "thread_id": thread_id,
             "query": query,
             "schema_context": "",
             "generated_code": "",

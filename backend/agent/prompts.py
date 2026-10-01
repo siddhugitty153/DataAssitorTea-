@@ -46,6 +46,12 @@ Analyze the following request and write Python code to answer it.
 
 **User Query:** {query}
 
+**Working Memory (Recent Chat Context):**
+{working_memory}
+
+**Episodic Memory (Past Analyses & Results):**
+{episodic_memory}
+
 **Relevant Schema Context (retrieved from the dataset's vector index):**
 {schema_context}
 
@@ -54,6 +60,7 @@ Think step-by-step:
 2. What data cleaning / transformations are needed?
 3. What statistical methods or aggregations should be applied?
 4. How should the results be formatted for the user?
+5. Did we do something similar in Episodic Memory? If so, reuse that logic if applicable.
 
 Now write the **complete, self-contained Python script** that answers the query.
 """

@@ -16,9 +16,9 @@ from pathlib import Path
 
 import faiss
 import numpy as np
-from openai import OpenAI
 
 from backend.config import settings
+from backend.core import create_embedder
 
 
 class FAISSStore:
@@ -30,10 +30,7 @@ class FAISSStore:
         self.index_path: Path = self.index_dir / "index.faiss"
         self.texts_path: Path = self.index_dir / "texts.json"
 
-        self._client = OpenAI(
-            api_key=settings.openai_api_key,
-            base_url=settings.openai_base_url,
-        )
+        self._embedder = create_embedder()
         self._index: faiss.IndexFlatIP | None = None
         self._texts: list[str] | None = None
 
@@ -62,16 +59,13 @@ class FAISSStore:
 
     # ── Search ─────────────────────────────────────────────────
 
-    def search(self, query: str, top_k: int = 5) -> str:
+    async def search(self, query: str, top_k: int = 5) -> str:
         """Embed the query and return the top-k most relevant text chunks."""
         self._load()
 
-        # Embed the natural-language query
-        resp = self._client.embeddings.create(
-            model=settings.embedding_model,
-            input=[query],
-        )
-        q_vec = np.array([resp.data[0].embedding], dtype=np.float32)
+        # Embed the natural-language query using the provider-agnostic embedder
+        q_vec_list = await self._embedder.embed([query])
+        q_vec = np.array(q_vec_list, dtype=np.float32)
         faiss.normalize_L2(q_vec)
 
         k = min(top_k, len(self._texts))  # type: ignore[arg-type]

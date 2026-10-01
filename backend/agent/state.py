@@ -22,6 +22,9 @@ class AgentState(TypedDict):
     # ── Dataset context ──
     dataset_id: str
     dataset_path: str
+    
+    # ── Session context ──
+    thread_id: str
 
     # ── User query ──
     query: str

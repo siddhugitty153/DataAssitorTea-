@@ -11,7 +11,7 @@ import re
 from datetime import datetime, timezone
 
 from backend.core import create_llm, create_sandbox
-from backend.memory.faiss_store import FAISSStore
+from backend.memory.manager import MemoryManager
 from backend.agent.prompts import (
     ERROR_CORRECTION_PROMPT,
     REASON_PROMPT,
@@ -66,9 +66,13 @@ async def reason(state: AgentState) -> dict:
     query = state["query"]
     dataset_id = state["dataset_id"]
 
-    # Retrieve relevant column metadata
-    store = FAISSStore(dataset_id)
-    schema_context = store.search(query, top_k=10)
+    manager = MemoryManager(state["thread_id"], dataset_id)
+    schema_context = await manager.get_schema_context(query, top_k=10)
+    
+    # Retrieve Working Memory & Episodic Memory
+    wm_messages = manager.get_working_memory(limit=4)
+    working_memory = "\n".join([f"{m['role'].title()}: {m['content']}" for m in wm_messages]) or "No recent context."
+    episodic_memory = await manager.recall_past_analyses(query, top_k=2)
 
     error = state.get("execution_error", "")
     iteration = state.get("iteration", 0)
@@ -86,6 +90,8 @@ async def reason(state: AgentState) -> dict:
     else:
         prompt_text = REASON_PROMPT.format(
             query=query,
+            working_memory=working_memory,
+            episodic_memory=episodic_memory,
             schema_context=schema_context,
         )
         n_chunks = len(schema_context.strip().split("\n\n"))
@@ -182,7 +188,17 @@ async def respond(state: AgentState) -> dict:
         llm_response = await _llm.generate([
             {"role": "user", "content": summary_prompt},
         ])
-        thought = "📊 Analysis complete — formatting results for the user."
+        
+        # Save to memory palace
+        manager = MemoryManager(state["thread_id"], state["dataset_id"])
+        await manager.save_analysis(
+            query=state["query"],
+            code=state["generated_code"],
+            result=state["execution_result"],
+        )
+        manager.add_message("assistant", llm_response.content)
+        
+        thought = "📊 Analysis complete — saved to Episodic Memory and formatted results."
         log = _log(state, "respond", thought)
         return {
             "execution_result": llm_response.content,

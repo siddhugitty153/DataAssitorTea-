@@ -12,6 +12,30 @@ The backend logic is scaffolded but **not yet tested end-to-end**. The project h
 
 ---
 
+## 📜 Project Rules (AI Instructions)
+1. **Always list pros and cons:** Whenever presented with a decision, the AI must always lay out the pros and cons of all available options *before* committing to a path.
+
+---
+
+## 🧠 Decision Log
+
+### Decision 1: Open-Source LLM Provider Integration
+**Context:** We wanted an open-source option for the LLM and Embeddings, with the ability to run in a GitHub Codespace but remain switchable.
+**Options Considered:**
+- **Option A: Ollama (Local)**
+  - *Pros:* 100% free, offline capability, complete data privacy, provides an OpenAI-compatible API out of the box, extremely easy to install.
+  - *Cons:* Requires the host machine (or Codespace) to have enough RAM/compute to run the model, slower than cloud APIs on CPU-only hosts.
+- **Option B: HuggingFace Inference API (Cloud)**
+  - *Pros:* No local compute required, fast, free tiers available for many models.
+  - *Cons:* Subject to rate limits, data leaves the local machine, some models require paid Pro tier.
+- **Option C: Sentence-Transformers (Local) + Cloud LLM**
+  - *Pros:* Decouples memory (local) from reasoning (cloud), ensuring no API costs for heavy indexing.
+  - *Cons:* Adds heavy Python dependencies (PyTorch) to the project just for embeddings, complicating the Docker image.
+
+**Decision:** We chose **Option A (Ollama)** because it provides a unified, zero-dependency (via the OpenAI SDK) solution for both LLMs and Embeddings, ensuring complete data privacy. We automated its installation in the GitHub Codespace (`.devcontainer/setup.sh`) to eliminate the setup friction.
+
+---
+
 ## 🏗️ Architecture (Current — Single Agent)
 
 ```
@@ -204,13 +228,13 @@ e:\Data Assister\
 - [x] Updated `.env.example`
 - [x] Verification tests passing
 
-### Phase 2: Memory System (NEXT)
-- [ ] Schema memory (refactor existing FAISS store to use new abstractions)
-- [ ] Conversation memory (SQLite — chat history per session)
-- [ ] Analysis memory (FAISS + SQLite — past query/code/results)
-- [ ] Memory manager (unified interface for agents)
+### Phase 2: Memory System ✅ DONE
+- [x] Schema memory (refactor existing FAISS store to use new abstractions)
+- [x] Conversation memory (SQLite — chat history per session)
+- [x] Analysis memory (FAISS + SQLite — past query/code/results)
+- [x] Memory manager (unified interface for agents)
 
-### Phase 3: Multi-Agent System
+### Phase 3: Multi-Agent System (NEXT)
 - [ ] BaseAgent class
 - [ ] Supervisor agent (orchestrator + intent classifier)
 - [ ] Profiler agent (auto-profile on upload)
