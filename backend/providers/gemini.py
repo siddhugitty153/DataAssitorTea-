@@ -123,7 +123,7 @@ class GeminiEmbedder(EmbeddingProvider):
     """
     Gemini text embeddings via the OpenAI compatibility endpoint.
 
-    Model: text-embedding-004  (768-dimensional vectors).
+    Model: gemini-embedding-2  (3072-dimensional vectors).
     Batch size: 100 texts per API call.
     """
 
@@ -136,11 +136,11 @@ class GeminiEmbedder(EmbeddingProvider):
 
     @property
     def dimension(self) -> int:
-        # text-embedding-004 produces 768-dim vectors.
+        # gemini-embedding-2 produces 3072-dim vectors.
         # We'll discover the real dimension on first call if needed.
         if self._dimension is not None:
             return self._dimension
-        return 768  # default for text-embedding-004
+        return 3072  # default for gemini-embedding-2
 
     async def embed(self, texts: list[str]) -> list[list[float]]:
         client = _get_client()

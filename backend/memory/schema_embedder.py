@@ -26,53 +26,79 @@ class SchemaEmbedder:
     # Step 1: Extract metadata
     # ────────────────────────────────────────────────────────────
 
-    def extract_metadata(self, csv_path: str) -> list[dict]:
+    def extract_metadata(self, csv_path: str, total_rows: int | None = None) -> list[dict]:
         """
         Read the first 1 000 rows to compute per-column statistics,
         then count total rows separately (cheap streaming count).
         """
-        df = pd.read_csv(csv_path, nrows=1_000)
+        # Try multiple encodings in case user uploaded Windows/Excel CSV
+        df = None
+        for enc in ["utf-8", "utf-8-sig", "latin1", "cp1252"]:
+            try:
+                df = pd.read_csv(csv_path, nrows=1_000, encoding=enc)
+                break
+            except Exception:
+                continue
+        
+        if df is None:
+            df = pd.read_csv(csv_path, nrows=1_000, encoding_errors="replace")
 
         metadata: list[dict] = []
 
         for col in df.columns:
+            null_count = int(df[col].isnull().sum())
+            null_pct = round(float(df[col].isnull().mean() * 100), 2)
+            unique_count = int(df[col].nunique())
+            sample_values = [str(v) for v in df[col].dropna().head(5).tolist()]
+
             entry: dict = {
-                "column_name": col,
+                "column_name": str(col),
                 "dtype": str(df[col].dtype),
-                "null_count": int(df[col].isnull().sum()),
-                "null_pct": round(float(df[col].isnull().mean() * 100), 2),
-                "unique_count": int(df[col].nunique()),
-                "sample_values": [
-                    str(v) for v in df[col].dropna().head(5).tolist()
-                ],
+                "null_count": null_count,
+                "null_pct": null_pct,
+                "unique_count": unique_count,
+                "sample_values": sample_values,
             }
 
             if pd.api.types.is_numeric_dtype(df[col]):
+                min_v = df[col].min()
+                max_v = df[col].max()
+                mean_v = df[col].mean()
+                std_v = df[col].std()
+                med_v = df[col].median()
+                
                 entry.update(
                     {
-                        "min": float(df[col].min()),
-                        "max": float(df[col].max()),
-                        "mean": round(float(df[col].mean()), 4),
-                        "std": round(float(df[col].std()), 4),
-                        "median": float(df[col].median()),
+                        "min": None if pd.isna(min_v) else float(min_v),
+                        "max": None if pd.isna(max_v) else float(max_v),
+                        "mean": None if pd.isna(mean_v) else round(float(mean_v), 4),
+                        "std": None if pd.isna(std_v) else round(float(std_v), 4),
+                        "median": None if pd.isna(med_v) else float(med_v),
                     }
                 )
             elif pd.api.types.is_string_dtype(df[col]) or pd.api.types.is_object_dtype(df[col]):
-                entry["top_values"] = {
-                    str(k): int(v)
-                    for k, v in df[col].value_counts().head(5).items()
-                }
+                try:
+                    entry["top_values"] = {
+                        str(k): int(v)
+                        for k, v in df[col].value_counts().head(5).items()
+                    }
+                except Exception:
+                    pass
 
             metadata.append(entry)
 
         # Dataset-level summary document
-        total_rows = sum(1 for _ in open(csv_path, encoding="utf-8")) - 1
+        if total_rows is None:
+            with open(csv_path, "rb") as f:
+                total_rows = sum(buf.count(b"\n") for buf in iter(lambda: f.read(1024 * 1024), b""))
+            total_rows = max(0, total_rows - 1)
+
         metadata.append(
             {
                 "column_name": "__DATASET__",
                 "total_rows": total_rows,
                 "total_columns": len(df.columns),
-                "column_list": list(df.columns),
+                "column_list": [str(c) for c in df.columns],
                 "dtypes_summary": {
                     str(k): int(v)
                     for k, v in df.dtypes.value_counts().items()
@@ -118,10 +144,10 @@ class SchemaEmbedder:
             f"  Unique values: {m['unique_count']}",
             f"  Sample values: {m['sample_values']}",
         ]
-        if "mean" in m:
+        if m.get("mean") is not None:
             lines.append(
-                f"  Stats: min={m['min']}, max={m['max']}, "
-                f"mean={m['mean']}, std={m['std']}, median={m['median']}"
+                f"  Stats: min={m.get('min')}, max={m.get('max')}, "
+                f"mean={m.get('mean')}, std={m.get('std')}, median={m.get('median')}"
             )
         if "top_values" in m:
             lines.append(f"  Top values: {m['top_values']}")

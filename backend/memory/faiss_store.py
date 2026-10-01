@@ -59,22 +59,27 @@ class FAISSStore:
 
     # ── Search ─────────────────────────────────────────────────
 
-    async def search(self, query: str, top_k: int = 5) -> str:
-        """Embed the query and return the top-k most relevant text chunks."""
+    async def search(self, query: str | None = None, top_k: int = 5, q_vec: np.ndarray | None = None) -> str:
+        """Embed the query (or use precomputed vector) and return the top-k most relevant text chunks."""
         self._load()
 
-        # Embed the natural-language query using the provider-agnostic embedder
-        q_vec_list = await self._embedder.embed([query])
-        q_vec = np.array(q_vec_list, dtype=np.float32)
-        faiss.normalize_L2(q_vec)
+        if self._texts is None or len(self._texts) == 0:
+            return "No schema context found."
 
-        k = min(top_k, len(self._texts))  # type: ignore[arg-type]
-        scores, indices = self._index.search(q_vec, k)  # type: ignore[union-attr]
+        if q_vec is None:
+            if not query:
+                return "No schema context found."
+            q_vec_list = await self._embedder.embed([query])
+            q_vec = np.array(q_vec_list, dtype=np.float32)
+            faiss.normalize_L2(q_vec)
+
+        k = min(top_k, len(self._texts))
+        scores, indices = self._index.search(q_vec, k)
 
         results: list[str] = []
         for score, idx in zip(scores[0], indices[0]):
             if idx >= 0:
-                results.append(self._texts[idx])  # type: ignore[index]
+                results.append(self._texts[idx])
 
         return "\n\n".join(results) if results else "No schema context found."
 

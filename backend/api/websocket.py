@@ -53,11 +53,17 @@ async def websocket_endpoint(ws: WebSocket, thread_id: str):
     """
     await manager.connect(ws, thread_id)
     try:
+        # Wait up to 5 seconds if thread was just being dispatched
+        for _ in range(25):
+            if thread_id in threads:
+                break
+            await asyncio.sleep(0.2)
+
         last_seen = 0
         while True:
             thread = threads.get(thread_id)
             if thread is None:
-                await ws.send_json({"error": "Thread not found"})
+                await ws.send_json({"error": "Thread not found", "type": "error"})
                 break
 
             thoughts = thread.get("thoughts", [])
@@ -72,13 +78,14 @@ async def websocket_endpoint(ws: WebSocket, thread_id: str):
                         "status": thread["status"],
                         "result": thread.get("result", ""),
                         "generated_code": thread.get("generated_code", ""),
+                        "error": thread.get("error", ""),
                     }
                 )
                 break
 
-            # Also listen for client messages (keep-alive, cancel, etc.)
+            # Polling delay & listen for client messages
             try:
-                await asyncio.wait_for(ws.receive_text(), timeout=0.5)
+                await asyncio.wait_for(ws.receive_text(), timeout=0.3)
             except asyncio.TimeoutError:
                 pass
 

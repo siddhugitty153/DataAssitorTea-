@@ -162,6 +162,43 @@ class MemoryManager:
         faiss.write_index(self._episodic_index, str(self.episodic_index_path))
         self.episodic_texts_path.write_text(json.dumps(self._episodic_texts, ensure_ascii=False))
 
+    async def get_memory_bundle(self, query: str) -> dict[str, str]:
+        """
+        Unified single-pass retrieval for all memory tiers.
+        Embeds the query once and queries Schema + Episodic + Working memory.
+        """
+        # 1. Embed query once
+        q_vec_list = await self.embedder.embed([query])
+        q_vec = np.array(q_vec_list, dtype=np.float32)
+        faiss.normalize_L2(q_vec)
+
+        # 2. Tier 3: Schema Memory (Vault) - top 5 most relevant columns
+        schema_context = await self.schema_store.search(q_vec=q_vec, top_k=5)
+
+        # 3. Tier 2: Episodic Memory (Library)
+        self._load_episodic()
+        episodic_memory = "No past analyses found."
+        if self._episodic_index is not None and self._episodic_index.ntotal > 0:
+            k = min(2, len(self._episodic_texts))
+            scores, indices = self._episodic_index.search(q_vec, k)
+            matched = [
+                self._episodic_texts[idx]
+                for score, idx in zip(scores[0], indices[0])
+                if idx >= 0 and score > 0.5
+            ]
+            if matched:
+                episodic_memory = "\n\n---\n\n".join(matched)
+
+        # 4. Tier 1: Working Memory (Foyer) - last 2 turns
+        wm_messages = self.get_working_memory(limit=3)
+        working_memory = "\n".join([f"{m['role'].title()}: {m['content'][:300]}" for m in wm_messages]) or "None"
+
+        return {
+            "schema_context": schema_context,
+            "episodic_memory": episodic_memory,
+            "working_memory": working_memory,
+        }
+
     async def recall_past_analyses(self, query: str, top_k: int = 2) -> str:
         """Semantically search past analyses."""
         self._load_episodic()
@@ -176,15 +213,14 @@ class MemoryManager:
         scores, indices = self._episodic_index.search(q_vec, k)
 
         results: list[str] = []
-        # Only return results with a reasonable similarity score (e.g. > 0.4)
         for score, idx in zip(scores[0], indices[0]):
-            if idx >= 0 and score > 0.4:
+            if idx >= 0 and score > 0.5:
                 results.append(self._episodic_texts[idx])
 
-        return "\n\n---\n\n".join(results) if results else "No relevant past analyses found."
+        return "\n\n---\n\n".join(results) if results else "No past analyses found."
 
     # ── Tier 3: Schema Memory (Vault) ───────────────────────────
 
-    async def get_schema_context(self, query: str, top_k: int = 10) -> str:
+    async def get_schema_context(self, query: str, top_k: int = 5) -> str:
         """Pass-through to the FAISS schema store."""
-        return await self.schema_store.search(query, top_k=top_k)
+        return await self.schema_store.search(query=query, top_k=top_k)

@@ -53,3 +53,6 @@ class AgentState(TypedDict):
 
     # ── Accumulated thought trace (streamed to frontend) ──
     thought_log: list[dict]
+
+    # ── Token usage accumulator ──
+    token_usage: dict[str, int]

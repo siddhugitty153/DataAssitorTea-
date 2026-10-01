@@ -23,8 +23,8 @@ class Settings(BaseSettings):
 
     # ── Gemini (via OpenAI compatibility layer) ─────────────────
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
-    gemini_embedding_model: str = "text-embedding-004"
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_embedding_model: str = "gemini-embedding-2"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
     # ── Ollama (local open-source) ──────────────────────────────

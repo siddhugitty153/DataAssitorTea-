@@ -37,6 +37,7 @@ class UploadResponse(BaseModel):
 class AnalyzeRequest(BaseModel):
     dataset_id: str = Field(..., description="ID returned by /upload")
     query: str = Field(..., min_length=3, description="Natural-language analysis query")
+    thread_id: str | None = Field(default=None, description="Optional client session or thread ID")
 
 
 class AnalyzeResponse(BaseModel):

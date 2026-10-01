@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import uuid
 
 import pandas as pd
@@ -47,34 +48,57 @@ async def upload_dataset(file: UploadFile = File(...)):
     save_dir.mkdir(parents=True, exist_ok=True)
     save_path = save_dir / "dataset.csv"
 
-    # Persist file
-    content = await file.read()
-    save_path.write_bytes(content)
+    # Persist file via streaming to avoid OOM on large files
+    with open(save_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
-    # Quick peek
-    df = pd.read_csv(save_path, nrows=5)
-    row_count = sum(1 for _ in open(save_path, encoding="utf-8")) - 1
+    # Quick peek with encoding fallback
+    df = None
+    for enc in ["utf-8", "utf-8-sig", "latin1", "cp1252"]:
+        try:
+            df = pd.read_csv(save_path, nrows=5, encoding=enc)
+            break
+        except Exception:
+            continue
+
+    if df is None:
+        try:
+            df = pd.read_csv(save_path, nrows=5, encoding_errors="replace")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Could not parse CSV file: {e}")
+    
+    # Fast row count (streaming blocks)
+    try:
+        with open(save_path, "rb") as f:
+            row_count = sum(buf.count(b"\n") for buf in iter(lambda: f.read(1024 * 1024), b""))
+        row_count = max(0, row_count - 1)
+    except Exception:
+        row_count = len(df)
 
     # Build FAISS index
-    embedder = SchemaEmbedder()
-    metadata = embedder.extract_metadata(str(save_path))
-    texts, embeddings = await embedder.create_embeddings(metadata)
+    try:
+        embedder = SchemaEmbedder()
+        metadata = embedder.extract_metadata(str(save_path), total_rows=row_count)
+        texts, embeddings = await embedder.create_embeddings(metadata)
 
-    store = FAISSStore(dataset_id)
-    store.build_index(texts, embeddings)
+        store = FAISSStore(dataset_id)
+        store.build_index(texts, embeddings)
+    except Exception as e:
+        # Don't let indexing failure completely block upload if possible, but log it
+        print(f"Warning: FAISS indexing error: {e}")
 
     datasets[dataset_id] = {
         "dataset_id": dataset_id,
         "filename": file.filename,
         "path": str(save_path),
-        "columns": list(df.columns),
+        "columns": [str(c) for c in df.columns],
         "row_count": row_count,
     }
 
     return UploadResponse(
         dataset_id=dataset_id,
         filename=file.filename,
-        columns=list(df.columns),
+        columns=[str(c) for c in df.columns],
         row_count=row_count,
         message=f"Indexed {row_count:,} rows × {len(df.columns)} columns into FAISS.",
     )
@@ -91,9 +115,10 @@ async def analyze_dataset(
 ):
     """Kick off the ReAct agent in the background and return a thread_id."""
     if request.dataset_id not in datasets:
-        raise HTTPException(status_code=404, detail="Dataset not found. Upload first.")
+        raise HTTPException(status_code=404, detail="Dataset not found. Please upload a CSV first.")
 
-    thread_id = uuid.uuid4().hex[:8]
+    # Use thread_id from request if provided or generate one
+    thread_id = getattr(request, "thread_id", None) or uuid.uuid4().hex[:8]
     ds = datasets[request.dataset_id]
 
     threads[thread_id] = {
@@ -108,9 +133,12 @@ async def analyze_dataset(
     }
 
     # Add query to Working Memory
-    from backend.memory.manager import MemoryManager
-    manager = MemoryManager(thread_id, request.dataset_id)
-    manager.add_message("user", request.query)
+    try:
+        from backend.memory.manager import MemoryManager
+        manager = MemoryManager(thread_id, request.dataset_id)
+        manager.add_message("user", request.query)
+    except Exception as e:
+        print(f"Warning: memory manager init error: {e}")
 
     background_tasks.add_task(
         _run_agent,
@@ -213,6 +241,7 @@ async def _run_agent(
             "max_iterations": settings.max_iterations,
             "status": "pending",
             "thought_log": [],
+            "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         }
 
         async for event in agent.astream(initial_state):
@@ -227,6 +256,11 @@ async def _run_agent(
                     threads[thread_id]["result"] = node_output["execution_result"]
                 if "execution_error" in node_output:
                     threads[thread_id]["error"] = node_output["execution_error"]
+                if "token_usage" in node_output:
+                    threads[thread_id]["token_usage"] = node_output["token_usage"]
+
+        if threads[thread_id]["status"] not in ("completed", "failed"):
+            threads[thread_id]["status"] = "completed"
 
     except Exception as exc:
         threads[thread_id]["status"] = "failed"
