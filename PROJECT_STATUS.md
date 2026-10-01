@@ -34,6 +34,28 @@ The backend logic is scaffolded but **not yet tested end-to-end**. The project h
 
 **Decision:** We chose **Option A (Ollama)** because it provides a unified, zero-dependency (via the OpenAI SDK) solution for both LLMs and Embeddings, ensuring complete data privacy. We automated its installation in the GitHub Codespace (`.devcontainer/setup.sh`) to eliminate the setup friction.
 
+### Decision 2: Multi-Agent System (MAS) Framework
+**Context:** Moving from a single ReAct loop to a multi-agent hierarchy to split the workload.
+**Options Considered:**
+- **Option A: CrewAI / AutoGen**
+  - *Pros:* High-level, very fast to prototype. Agents figure out their own interactions.
+  - *Cons:* Black-box logic. Hard to strictly control the flow to prevent infinite loops, and difficult to enforce absolute security bounds (like our Docker sandbox).
+- **Option B: LangGraph (Current)**
+  - *Pros:* Explicit control flow (DAG). Natively supports our custom Docker sandbox, streaming, and Memory Palace. 
+  - *Cons:* Requires more boilerplate (state dicts, routing nodes).
+**Decision:** We chose **Option B (LangGraph)** to ensure we maintain absolute control over the code execution sandbox and prevent endless conversational loops.
+
+### Decision 3: Quality Assurance (QA) Sub-Agent
+**Context:** The Analyst agent often gets "tunnel vision" when trying to self-correct sandbox errors.
+**Options Considered:**
+- **Option A: Solo Analyst (Self-Correction)**
+  - *Pros:* Faster execution, uses fewer tokens per turn.
+  - *Cons:* Prone to patching the code without fixing the underlying logical/statistical error.
+- **Option B: Analyst + QA Reviewer Sub-Loop**
+  - *Pros:* A dedicated QA agent reviews the Analyst's code/output before moving on. Massively reduces logic errors and catches edge cases.
+  - *Cons:* Costs more tokens per iteration and slows down the total response time.
+**Decision:** We chose **Option B (QA Reviewer)**. Combined with the Memory Palace (which isolates context and prevents token explosion), the QA loop is highly efficient and guarantees a production-grade, statistically sound output.
+
 ---
 
 ## 🏗️ Architecture (Current — Single Agent)
@@ -234,15 +256,15 @@ e:\Data Assister\
 - [x] Analysis memory (FAISS + SQLite — past query/code/results)
 - [x] Memory manager (unified interface for agents)
 
-### Phase 3: Multi-Agent System (NEXT)
-- [ ] BaseAgent class
-- [ ] Supervisor agent (orchestrator + intent classifier)
-- [ ] Profiler agent (auto-profile on upload)
-- [ ] Analyst agent (statistical code gen + execution)
-- [ ] Visualizer agent (chart generation)
-- [ ] LangGraph multi-agent workflow
+### Phase 3: Multi-Agent System ✅ DONE
+- [x] BaseAgent class / Nodes implementation
+- [x] Supervisor agent (orchestrator + intent classifier)
+- [x] Profiler agent (auto-profile on upload - basic version integrated in memory)
+- [x] Analyst agent (statistical code gen + execution)
+- [x] Visualizer agent (chart generation)
+- [x] LangGraph multi-agent workflow
 
-### Phase 4: API + UI
+### Phase 4: API + UI (NEXT)
 - [ ] Clean REST API + WebSocket streaming
 - [ ] Premium frontend (Next.js or standalone)
 - [ ] Dashboard layout, data preview, charts

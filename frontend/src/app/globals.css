@@ -1,0 +1,230 @@
+:root {
+  --bg-main: #ffffff;
+  --bg-sidebar: #f9fafb;
+  --border-color: #e5e7eb;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --accent-color: #0f172a;
+  --accent-hover: #334155;
+  --user-msg-bg: #f3f4f6;
+  --agent-msg-bg: #ffffff;
+  --success-color: #059669;
+  --error-color: #dc2626;
+  
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100vh;
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-family: inherit;
+}
+
+input, textarea {
+  font-family: inherit;
+}
+
+/* ── LAYOUT ── */
+.app-container {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.logo {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--accent-color);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.upload-zone {
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 2rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  background-color: var(--bg-main);
+}
+
+.upload-zone:hover {
+  border-color: var(--text-secondary);
+  background-color: var(--bg-sidebar);
+}
+
+.upload-zone h3 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.upload-zone p {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.section-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+/* ── MAIN WORKSPACE ── */
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: var(--bg-main);
+}
+
+.header {
+  padding: 1.5rem 2rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header h1 {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.chat-container {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+/* ── MESSAGES ── */
+.message {
+  display: flex;
+  gap: 1rem;
+  max-width: 800px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.message-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.875rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.message.user .message-avatar {
+  background-color: var(--text-primary);
+  color: white;
+}
+
+.message.agent .message-avatar {
+  background-color: var(--bg-sidebar);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+
+.message-content {
+  flex: 1;
+  padding: 1rem;
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.message.user .message-content {
+  background-color: var(--user-msg-bg);
+}
+
+.message.agent .message-content {
+  background-color: var(--agent-msg-bg);
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── INPUT AREA ── */
+.input-area {
+  padding: 1.5rem 2rem;
+  border-top: 1px solid var(--border-color);
+  background-color: var(--bg-main);
+}
+
+.input-box {
+  max-width: 800px;
+  margin: 0 auto;
+  position: relative;
+  display: flex;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.input-box input {
+  flex: 1;
+  padding: 1rem;
+  border: none;
+  outline: none;
+  font-size: 0.9375rem;
+}
+
+.input-box button {
+  padding: 0 1.5rem;
+  background-color: var(--accent-color);
+  color: white;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+.input-box button:hover {
+  background-color: var(--accent-hover);
+}
+
+.input-box button:disabled {
+  background-color: var(--text-secondary);
+  cursor: not-allowed;
+}

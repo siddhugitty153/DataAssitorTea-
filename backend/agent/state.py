@@ -39,6 +39,11 @@ class AgentState(TypedDict):
     execution_result: str
     execution_error: str
 
+    # ── Multi-Agent Routing & QA ──
+    next_agent: str           # e.g., 'analyst', 'visualizer', 'profiler', 'responder'
+    qa_feedback: str          # Critique from the QA Reviewer
+    visualize_required: bool  # Flag if the supervisor wants a chart
+
     # ── Loop control ──
     iteration: int
     max_iterations: int
