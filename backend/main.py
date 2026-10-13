@@ -25,11 +25,16 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS — allow Streamlit and future Next.js frontend
+# CORS — allow known frontends (tightened from wildcard for security)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=[
+        "http://localhost:3000",   # Next.js dev server
+        "http://127.0.0.1:3000",
+        "http://localhost:8000",   # Swagger docs
+        "http://127.0.0.1:8000",
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )

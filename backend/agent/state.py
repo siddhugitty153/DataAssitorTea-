@@ -35,7 +35,7 @@ class AgentState(TypedDict):
     # ── LLM-generated Python code ──
     generated_code: str
 
-    # ── Sandbox execution output ──
+    # ── Sandbox execution output (raw — preserved for debugging) ──
     execution_result: str
     execution_error: str
 
@@ -56,3 +56,6 @@ class AgentState(TypedDict):
 
     # ── Token usage accumulator ──
     token_usage: dict[str, int]
+
+    # ── Final formatted answer from Responder (B6: separate from execution_result) ──
+    final_answer: str

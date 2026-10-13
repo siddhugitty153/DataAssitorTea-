@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # ── Gemini (via OpenAI compatibility layer) ─────────────────
     gemini_api_key: str = ""
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.8-flash"
     gemini_embedding_model: str = "gemini-embedding-2"
     gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
 
@@ -54,7 +54,10 @@ class Settings(BaseSettings):
     faiss_dir: Path = Path("data/faiss_indexes")
     uploads_dir: Path = Path("data/uploads")
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    model_config = {
+        "env_file": Path(__file__).resolve().parent.parent / ".env",
+        "extra": "ignore",
+    }
 
 
 settings = Settings()

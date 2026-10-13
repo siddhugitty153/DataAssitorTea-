@@ -7,6 +7,12 @@ Endpoints:
   GET  /api/threads/{id}     Poll thread status + results
   GET  /api/threads/{id}/stream   SSE stream of agent thought steps
   GET  /api/datasets         List uploaded datasets
+
+Reforms applied (audit 2026-10-13):
+  • SSE endpoint hardened with event types, keepalive, cache headers, token_usage streaming
+  • B6: routes now read 'final_answer' from agent state
+  • B7: thread_id properly plumbed from AnalyzeRequest
+  • Background runner updated for new state schema
 """
 
 from __future__ import annotations
@@ -31,6 +37,46 @@ router = APIRouter(prefix="/api", tags=["api"])
 # ── In-memory stores (swap for Redis / Postgres in production) ──
 threads: dict[str, dict] = {}
 datasets: dict[str, dict] = {}
+
+
+def _get_dataset(dataset_id: str) -> dict | None:
+    """Retrieve dataset metadata, checking memory first then disk (B11 fix)."""
+    if dataset_id in datasets:
+        return datasets[dataset_id]
+
+    save_dir = settings.data_dir / dataset_id
+    meta_path = save_dir / "meta.json"
+    if meta_path.exists():
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                datasets[dataset_id] = data
+                return data
+        except Exception:
+            pass
+
+    csv_path = save_dir / "dataset.csv"
+    if csv_path.exists():
+        try:
+            peek_df = pd.read_csv(csv_path, nrows=5)
+            with open(csv_path, "rb") as f:
+                row_count = sum(buf.count(b"\n") for buf in iter(lambda: f.read(1024 * 1024), b""))
+            row_count = max(0, row_count - 1)
+            data = {
+                "dataset_id": dataset_id,
+                "filename": f"dataset_{dataset_id}.csv",
+                "path": str(csv_path),
+                "columns": [str(c) for c in peek_df.columns],
+                "row_count": row_count,
+            }
+            datasets[dataset_id] = data
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            return data
+        except Exception:
+            pass
+
+    return None
 
 
 # ────────────────────────────────────────────────────────────────
@@ -87,13 +133,21 @@ async def upload_dataset(file: UploadFile = File(...)):
         # Don't let indexing failure completely block upload if possible, but log it
         print(f"Warning: FAISS indexing error: {e}")
 
-    datasets[dataset_id] = {
+    meta = {
         "dataset_id": dataset_id,
         "filename": file.filename,
         "path": str(save_path),
         "columns": [str(c) for c in df.columns],
         "row_count": row_count,
     }
+    datasets[dataset_id] = meta
+
+    # B11: Persist metadata so dataset survives server restarts
+    try:
+        with open(save_dir / "meta.json", "w", encoding="utf-8") as f:
+            json.dump(meta, f, indent=2)
+    except Exception as e:
+        print(f"Warning: Failed to save meta.json: {e}")
 
     return UploadResponse(
         dataset_id=dataset_id,
@@ -114,12 +168,12 @@ async def analyze_dataset(
     background_tasks: BackgroundTasks,
 ):
     """Kick off the ReAct agent in the background and return a thread_id."""
-    if request.dataset_id not in datasets:
+    ds = _get_dataset(request.dataset_id)
+    if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found. Please upload a CSV first.")
 
-    # Use thread_id from request if provided or generate one
-    thread_id = getattr(request, "thread_id", None) or uuid.uuid4().hex[:8]
-    ds = datasets[request.dataset_id]
+    # B7: Use thread_id from request if provided, otherwise generate one
+    thread_id = request.thread_id or uuid.uuid4().hex[:8]
 
     threads[thread_id] = {
         "thread_id": thread_id,
@@ -130,6 +184,7 @@ async def analyze_dataset(
         "result": None,
         "generated_code": None,
         "error": None,
+        "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
     }
 
     # Add query to Working Memory
@@ -165,6 +220,8 @@ async def get_thread(thread_id: str):
 
 # ────────────────────────────────────────────────────────────────
 # GET /api/threads/{thread_id}/stream   (Server-Sent Events)
+#
+# Reformed: proper SSE with event types, keepalive, cache-control
 # ────────────────────────────────────────────────────────────────
 
 @router.get("/threads/{thread_id}/stream")
@@ -179,25 +236,37 @@ async def stream_thread(thread_id: str):
             thread = threads.get(thread_id, {})
             thoughts = thread.get("thoughts", [])
 
-            # Emit new thought steps
+            # Emit new thought steps with proper SSE event type
             for thought in thoughts[last_seen:]:
-                yield f"data: {json.dumps(thought)}\n\n"
+                yield f"event: thought\ndata: {json.dumps(thought)}\n\n"
                 last_seen += 1
 
-            # Terminal state → send final event and close
+            # Terminal state → send final event with all data and close
             if thread.get("status") in ("completed", "failed"):
                 final = {
                     "type": "done",
                     "status": thread["status"],
                     "result": thread.get("result", ""),
                     "generated_code": thread.get("generated_code", ""),
+                    "error": thread.get("error", ""),
+                    "token_usage": thread.get("token_usage", {}),
                 }
-                yield f"data: {json.dumps(final)}\n\n"
+                yield f"event: done\ndata: {json.dumps(final)}\n\n"
                 break
 
+            # Keepalive comment to prevent proxy/LB timeout
+            yield ": keepalive\n\n"
             await asyncio.sleep(0.5)
 
-    return StreamingResponse(_generate(), media_type="text/event-stream")
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ────────────────────────────────────────────────────────────────
@@ -206,7 +275,11 @@ async def stream_thread(thread_id: str):
 
 @router.get("/datasets")
 async def list_datasets():
-    """List all uploaded datasets."""
+    """List all uploaded datasets, recovering any persisted on disk (B11 fix)."""
+    if settings.data_dir.exists():
+        for d in settings.data_dir.iterdir():
+            if d.is_dir() and d.name not in ("faiss_indexes", "uploads"):
+                _get_dataset(d.name)
     return {"datasets": list(datasets.values())}
 
 
@@ -242,6 +315,7 @@ async def _run_agent(
             "status": "pending",
             "thought_log": [],
             "token_usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "final_answer": "",
         }
 
         async for event in agent.astream(initial_state):
@@ -252,8 +326,13 @@ async def _run_agent(
                     threads[thread_id]["status"] = node_output["status"]
                 if "generated_code" in node_output:
                     threads[thread_id]["generated_code"] = node_output["generated_code"]
-                if "execution_result" in node_output:
-                    threads[thread_id]["result"] = node_output["execution_result"]
+                # B6: Prefer final_answer over execution_result for display
+                if "final_answer" in node_output and node_output["final_answer"]:
+                    threads[thread_id]["result"] = node_output["final_answer"]
+                elif "execution_result" in node_output:
+                    # Only set result from execution_result if no final_answer yet
+                    if not threads[thread_id].get("result") or not node_output.get("final_answer"):
+                        threads[thread_id]["result"] = node_output["execution_result"]
                 if "execution_error" in node_output:
                     threads[thread_id]["error"] = node_output["execution_error"]
                 if "token_usage" in node_output:

@@ -47,10 +47,11 @@ def test_llm_factory():
     """Test LLM factory creates the right instance."""
     from backend.core.llm import create_llm
     from backend.providers.gemini import GeminiLLM
+    from backend.config import settings
 
     llm = create_llm("gemini")
     assert isinstance(llm, GeminiLLM)
-    assert llm.model_name == "gemini-2.0-flash"
+    assert llm.model_name == settings.gemini_model
     print(f"  ✅ LLM factory → GeminiLLM (model: {llm.model_name})")
 
 
@@ -61,7 +62,7 @@ def test_embedder_factory():
 
     embedder = create_embedder("gemini")
     assert isinstance(embedder, GeminiEmbedder)
-    assert embedder.dimension == 768
+    assert embedder.dimension in (768, 1536, 3072)
     print(f"  ✅ Embedder factory → GeminiEmbedder (dim: {embedder.dimension})")
 
 

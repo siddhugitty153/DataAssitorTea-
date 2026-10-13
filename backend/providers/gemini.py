@@ -35,9 +35,16 @@ def _get_client() -> AsyncOpenAI:
     """Lazy-create a single AsyncOpenAI client pointing at Gemini."""
     from backend.config import settings
 
+    key = (settings.gemini_api_key or "").strip()
+    headers = {}
+    if key:
+        headers["x-goog-api-key"] = key
+
     return AsyncOpenAI(
-        api_key=settings.gemini_api_key,
+        api_key=key,
         base_url=settings.gemini_base_url,
+        default_headers=headers if headers else None,
+        timeout=45.0,
     )
 
 
@@ -69,6 +76,7 @@ class GeminiLLM(LLMProvider):
         max_tokens: int = 4096,
     ) -> LLMResponse:
         client = _get_client()
+        print(f"[GeminiLLM] Calling generate with model '{self._model}' ({len(messages)} messages)...", flush=True)
 
         response = await client.chat.completions.create(
             model=self._model,
@@ -76,6 +84,7 @@ class GeminiLLM(LLMProvider):
             temperature=temperature,
             max_tokens=max_tokens,
         )
+        print(f"[GeminiLLM] Response received from '{self._model}' ({len(response.choices[0].message.content or '')} chars)", flush=True)
 
         choice = response.choices[0]
         usage = {}
@@ -145,6 +154,7 @@ class GeminiEmbedder(EmbeddingProvider):
     async def embed(self, texts: list[str]) -> list[list[float]]:
         client = _get_client()
         all_embeddings: list[list[float]] = []
+        print(f"[GeminiEmbedder] Embedding {len(texts)} texts with model '{self._model}'...", flush=True)
 
         for i in range(0, len(texts), self.BATCH_SIZE):
             batch = texts[i : i + self.BATCH_SIZE]
@@ -161,4 +171,5 @@ class GeminiEmbedder(EmbeddingProvider):
             if self._dimension is None and batch_embeddings:
                 self._dimension = len(batch_embeddings[0])
 
+        print(f"[GeminiEmbedder] Finished embedding {len(texts)} texts (dimension: {self.dimension})", flush=True)
         return all_embeddings

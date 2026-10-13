@@ -2,6 +2,128 @@
 
 import { useState, useRef, useEffect } from "react";
 
+// ── Simple Markdown Renderer ────────────────────────────────────
+// Handles: headers, bold, inline code, code blocks, lists, links
+function renderMarkdown(text) {
+  if (!text) return null;
+  
+  const lines = text.split("\n");
+  const elements = [];
+  let inCodeBlock = false;
+  let codeBuffer = [];
+  let codeLang = "";
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Code block fence
+    if (line.trim().startsWith("```")) {
+      if (inCodeBlock) {
+        elements.push(
+          <div key={`code-${i}`} className="code-container">
+            <div className="code-header">
+              <span>{codeLang || "output"}</span>
+            </div>
+            <pre className="code-box"><code>{codeBuffer.join("\n")}</code></pre>
+          </div>
+        );
+        codeBuffer = [];
+        codeLang = "";
+        inCodeBlock = false;
+      } else {
+        inCodeBlock = true;
+        codeLang = line.trim().replace("```", "").trim();
+      }
+      continue;
+    }
+
+    if (inCodeBlock) {
+      codeBuffer.push(line);
+      continue;
+    }
+
+    // Headers
+    if (line.startsWith("### ")) {
+      elements.push(<h3 key={i}>{formatInline(line.slice(4))}</h3>);
+    } else if (line.startsWith("## ")) {
+      elements.push(<h2 key={i}>{formatInline(line.slice(3))}</h2>);
+    } else if (line.startsWith("# ")) {
+      elements.push(<h1 key={i}>{formatInline(line.slice(2))}</h1>);
+    }
+    // Unordered list items
+    else if (/^\s*[-*]\s+/.test(line)) {
+      const content = line.replace(/^\s*[-*]\s+/, "");
+      elements.push(
+        <ul key={i}><li>{formatInline(content)}</li></ul>
+      );
+    }
+    // Ordered list items
+    else if (/^\s*\d+\.\s+/.test(line)) {
+      const content = line.replace(/^\s*\d+\.\s+/, "");
+      elements.push(
+        <ol key={i}><li>{formatInline(content)}</li></ol>
+      );
+    }
+    // Empty line
+    else if (!line.trim()) {
+      elements.push(<div key={i} style={{ height: "0.4rem" }} />);
+    }
+    // Regular paragraph
+    else {
+      elements.push(<p key={i}>{formatInline(line)}</p>);
+    }
+  }
+
+  return <div className="formatted-result">{elements}</div>;
+}
+
+// Format inline markdown: **bold**, *italic*, `code`, [links](url)
+function formatInline(text) {
+  if (!text) return text;
+  
+  const parts = [];
+  let remaining = text;
+  let key = 0;
+
+  while (remaining.length > 0) {
+    // Bold: **text**
+    let match = remaining.match(/^(.*?)\*\*(.+?)\*\*(.*)/s);
+    if (match) {
+      if (match[1]) parts.push(match[1]);
+      parts.push(<strong key={`b-${key++}`}>{match[2]}</strong>);
+      remaining = match[3];
+      continue;
+    }
+    
+    // Inline code: `text`
+    match = remaining.match(/^(.*?)`(.+?)`(.*)/s);
+    if (match) {
+      if (match[1]) parts.push(match[1]);
+      parts.push(
+        <code key={`c-${key++}`} style={{
+          background: "rgba(99, 102, 241, 0.15)",
+          padding: "0.1rem 0.35rem",
+          borderRadius: "4px",
+          fontSize: "0.85em",
+          fontFamily: "'JetBrains Mono', monospace",
+        }}>{match[2]}</code>
+      );
+      remaining = match[3];
+      continue;
+    }
+
+    // No more patterns — push the rest
+    parts.push(remaining);
+    break;
+  }
+
+  return parts.length === 1 ? parts[0] : parts;
+}
+
+// ── API Configuration ──────────────────────────────────────────
+const API_BASE = "http://localhost:8000";
+
+
 export default function Dashboard() {
   const [messages, setMessages] = useState([
     {
@@ -23,11 +145,21 @@ export default function Dashboard() {
 
   const fileInputRef = useRef(null);
   const chatBottomRef = useRef(null);
+  const eventSourceRef = useRef(null);
 
   // Auto-scroll chat to bottom
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isProcessing]);
+
+  // Cleanup SSE on unmount
+  useEffect(() => {
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
+  }, []);
 
   const toggleThoughts = (msgId) => {
     setExpandedThoughts((prev) => ({
@@ -55,7 +187,7 @@ export default function Dashboard() {
     formData.append("file", file);
 
     try {
-      const res = await fetch("http://localhost:8000/api/upload", {
+      const res = await fetch(`${API_BASE}/api/upload`, {
         method: "POST",
         body: formData,
       });
@@ -91,7 +223,7 @@ export default function Dashboard() {
     }
   };
 
-  // Handle Query Execution with Live Streaming & Polling Fallback
+  // ── Handle Query Execution with Real SSE Streaming ──
   const handleSend = async (queryText) => {
     const query = (queryText || input).trim();
     if (!query || !datasetInfo?.id || isProcessing) return;
@@ -110,7 +242,7 @@ export default function Dashboard() {
         id: agentMsgId,
         role: "agent",
         content: "",
-        thoughts: [{ step: "Step 1", type: "supervisor", content: "Initializing Multi-Agent swarm..." }],
+        thoughts: [{ step: "Step 1", type: "supervisor", content: "Initializing Multi-Agent system..." }],
         generatedCode: null,
         error: null,
         status: "running",
@@ -121,7 +253,7 @@ export default function Dashboard() {
 
     try {
       // 1. Dispatch background analysis
-      const res = await fetch("http://localhost:8000/api/analyze", {
+      const res = await fetch(`${API_BASE}/api/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -137,58 +269,128 @@ export default function Dashboard() {
 
       const threadId = data.thread_id;
 
-      // 2. Poll & stream results until completed or failed
-      let isDone = false;
-      let attempts = 0;
+      // 2. Connect to SSE stream for real-time thought updates (B3 fix)
+      const eventSource = new EventSource(`${API_BASE}/api/threads/${threadId}/stream`);
+      eventSourceRef.current = eventSource;
 
-      const pollInterval = setInterval(async () => {
-        attempts += 1;
-        if (isDone || attempts > 120) {
-          clearInterval(pollInterval);
-          if (attempts > 120 && !isDone) {
+      // Track accumulated thoughts from SSE
+      let accumulatedThoughts = [];
+
+      eventSource.addEventListener("thought", (event) => {
+        const thought = JSON.parse(event.data);
+        accumulatedThoughts = [...accumulatedThoughts, thought];
+
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (msg.id !== agentMsgId) return msg;
+            return {
+              ...msg,
+              thoughts: accumulatedThoughts,
+              status: "running",
+            };
+          })
+        );
+      });
+
+      eventSource.addEventListener("done", (event) => {
+        const finalData = JSON.parse(event.data);
+        eventSource.close();
+        eventSourceRef.current = null;
+
+        setMessages((prev) =>
+          prev.map((msg) => {
+            if (msg.id !== agentMsgId) return msg;
+            return {
+              ...msg,
+              content: finalData.result || "Analysis complete.",
+              generatedCode: finalData.generated_code || null,
+              error: finalData.error || null,
+              status: finalData.status,
+              tokenUsage: finalData.token_usage || null,
+              thoughts: accumulatedThoughts,
+            };
+          })
+        );
+        setIsProcessing(false);
+      });
+
+      // Fallback: handle generic messages (for SSE servers that don't use event types)
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === "done") {
+            eventSource.close();
+            eventSourceRef.current = null;
+
             setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === agentMsgId
-                  ? { ...msg, error: "Analysis timed out after 60 seconds.", status: "failed" }
-                  : msg
-              )
+              prev.map((msg) => {
+                if (msg.id !== agentMsgId) return msg;
+                return {
+                  ...msg,
+                  content: data.result || "Analysis complete.",
+                  generatedCode: data.generated_code || null,
+                  error: data.error || null,
+                  status: data.status,
+                  tokenUsage: data.token_usage || null,
+                };
+              })
             );
             setIsProcessing(false);
+            return;
           }
-          return;
-        }
 
-        try {
-          const statusRes = await fetch(`http://localhost:8000/api/threads/${threadId}`);
-          if (!statusRes.ok) return;
-
-          const threadData = await statusRes.json();
-
-          // Update thoughts & status live
-          setMessages((prev) =>
-            prev.map((msg) => {
-              if (msg.id !== agentMsgId) return msg;
-              return {
-                ...msg,
-                thoughts: threadData.thoughts || msg.thoughts,
-                status: threadData.status,
-                generatedCode: threadData.generated_code || msg.generatedCode,
-                content: threadData.result || msg.content,
-                error: threadData.error || msg.error,
-                tokenUsage: threadData.token_usage || msg.tokenUsage,
-              };
-            })
-          );
-
-          if (threadData.status === "completed" || threadData.status === "failed") {
-            isDone = true;
-            clearInterval(pollInterval);
-            setIsProcessing(false);
+          // It's a thought step
+          if (data.step || data.type) {
+            accumulatedThoughts = [...accumulatedThoughts, data];
+            setMessages((prev) =>
+              prev.map((msg) => {
+                if (msg.id !== agentMsgId) return msg;
+                return {
+                  ...msg,
+                  thoughts: accumulatedThoughts,
+                };
+              })
+            );
           }
-        } catch (pollErr) {
-          console.warn("Polling status error:", pollErr);
+        } catch (e) {
+          // Ignore parse errors (e.g. keepalive comments)
         }
-      }, 600);
+      };
+
+      eventSource.onerror = (err) => {
+        console.warn("SSE connection error:", err);
+        eventSource.close();
+        eventSourceRef.current = null;
+
+        // Fallback: poll once for final result
+        setTimeout(async () => {
+          try {
+            const statusRes = await fetch(`${API_BASE}/api/threads/${threadId}`);
+            if (statusRes.ok) {
+              const threadData = await statusRes.json();
+              setMessages((prev) =>
+                prev.map((msg) => {
+                  if (msg.id !== agentMsgId) return msg;
+                  return {
+                    ...msg,
+                    content: threadData.result || msg.content || "Analysis completed (SSE disconnected).",
+                    generatedCode: threadData.generated_code || msg.generatedCode,
+                    error: threadData.error || msg.error,
+                    status: threadData.status || "completed",
+                    tokenUsage: threadData.token_usage || msg.tokenUsage,
+                    thoughts: threadData.thoughts || msg.thoughts,
+                  };
+                })
+              );
+            }
+          } catch (e) {
+            console.warn("Fallback poll failed:", e);
+          }
+          setIsProcessing(false);
+        }, 1000);
+      };
+
     } catch (err) {
       setMessages((prev) =>
         prev.map((msg) =>
@@ -206,6 +408,12 @@ export default function Dashboard() {
   };
 
   const handleClearChat = () => {
+    // Close any active SSE connection
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+
     setMessages([
       {
         id: "welcome",
@@ -218,6 +426,7 @@ export default function Dashboard() {
         error: null,
       },
     ]);
+    setIsProcessing(false);
   };
 
   const sampleQueries = datasetInfo
@@ -230,38 +439,6 @@ export default function Dashboard() {
     : [
         "Upload a dataset to see sample analytical queries.",
       ];
-
-  // Helper to render formatted text
-  const renderFormattedText = (text) => {
-    if (!text) return null;
-    const lines = text.split("\n");
-    return (
-      <div className="formatted-result">
-        {lines.map((line, idx) => {
-          if (line.startsWith("### ")) {
-            return <h3 key={idx}>{line.replace("### ", "")}</h3>;
-          }
-          if (line.startsWith("## ")) {
-            return <h2 key={idx}>{line.replace("## ", "")}</h2>;
-          }
-          if (line.startsWith("# ")) {
-            return <h1 key={idx}>{line.replace("# ", "")}</h1>;
-          }
-          if (line.startsWith("* ") || line.startsWith("- ")) {
-            return (
-              <ul key={idx}>
-                <li>{line.substring(2)}</li>
-              </ul>
-            );
-          }
-          if (!line.trim()) {
-            return <div key={idx} style={{ height: "0.4rem" }} />;
-          }
-          return <p key={idx}>{line}</p>;
-        })}
-      </div>
-    );
-  };
 
   return (
     <div className="app-container">
@@ -386,10 +563,10 @@ export default function Dashboard() {
             <div className={`pulse-dot ${isProcessing ? "busy" : ""}`} />
             <div>
               <div style={{ color: "var(--text-primary)", fontWeight: 600 }}>
-                {isProcessing ? "Multi-Agent Swarm Active" : "System Ready"}
+                {isProcessing ? "Multi-Agent System Active" : "System Ready"}
               </div>
               <div style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
-                Gemini 2.5 Flash + Local Sandbox
+                Gemini 2.5 Flash + Local Sandbox • SSE Streaming
               </div>
             </div>
           </div>
@@ -401,7 +578,7 @@ export default function Dashboard() {
         <header className="header">
           <div className="header-title-box">
             <h1>Autonomous Analysis Workspace</h1>
-            <p>ReAct Orchestration • Code Sandbox • QA Verification</p>
+            <p>Multi-Agent Orchestration • Code Sandbox • QA Verification • SSE Streaming</p>
           </div>
           <div className="header-actions">
             <button className="btn-secondary" onClick={handleClearChat}>
@@ -429,6 +606,9 @@ export default function Dashboard() {
                       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                         <span style={{ color: "var(--primary)" }}>⚙️</span>
                         <span>Agent Reasoning Chain ({msg.thoughts.length} steps)</span>
+                        {msg.status === "running" && (
+                          <div className="spinner" style={{ width: 12, height: 12, borderWidth: "1.5px" }} />
+                        )}
                       </div>
                       <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
                         {expandedThoughts[msg.id] ? "▲ Collapse" : "▼ Expand"}
@@ -462,9 +642,9 @@ export default function Dashboard() {
                   </div>
                 )}
 
-                {/* Main Content */}
+                {/* Main Content — uses proper markdown rendering (B9 fix) */}
                 {msg.content ? (
-                  renderFormattedText(msg.content)
+                  renderMarkdown(msg.content)
                 ) : msg.status === "running" ? (
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", color: "var(--text-secondary)" }}>
                     <div className="spinner" />
@@ -482,7 +662,8 @@ export default function Dashboard() {
                     alignItems: "center",
                     gap: "0.75rem",
                     fontSize: "0.72rem",
-                    color: "var(--text-muted)"
+                    color: "var(--text-muted)",
+                    flexWrap: "wrap",
                   }}>
                     <span style={{ display: "flex", alignItems: "center", gap: "0.3rem", color: "var(--accent-cyan)", fontWeight: 600 }}>
                       ⚡ {msg.tokenUsage.total_tokens.toLocaleString()} tokens
